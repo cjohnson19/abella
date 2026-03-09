@@ -3,19 +3,35 @@ Changes in 2.1.0-dev from 2.0.8
 
 Additions
 
-* Abella can now load files over the internet. Anywhere a file name is
-  expected, a URL can be used instead. For instance, it is valid to say:
+* Added the `compute` tactic for performing asynchronous
+  computation on hypotheses. Detailed examples can be found
+  in the `examples/compute/` subdirectory.
 
-  >     Import "https://abella-prover.org/examples/first-order/add".
+Changes
 
+* Abella now compiles with Dune version 3.7 or later.  
+  (#154, reported by @yurivict)
+* Abella is now byte-compiled for ppc32 and ppc64.  
+  (#151, reporeted by @barracuda156)
 
 Bugfixes
 
+* `apply` now prevents capture on instantiation of `forall`-quantified
+  variables in the lemma. ***BREAKING CHANGE*** (this changes the
+  numbering of variables, even bound variables)  
+  (#164, reported by @wikku)
+* `Split` is less picky about the forms of generated theorems  
+  (#161, reported by @wikku)
+* File names in error locations were not correct  
+  (PR #157, contributed by @wikku)
+* Incorrect lambda-prefix for non-Llambda unification problems  
+  (#155, report + fix by @wikku)
 * `Import ... with` now requires the replacements for the declared
   predicates in the importee to be pairwise distinct.  
   (#152, discovered in discussions with Farah Al Wardani @innofarah and Dale
   Miller @thatdalemiller)  
   ***SOUNDNESS BUG***
+* `Import ... with` performs the replacements simultaneously. (#153)
 
 
 Changes in 2.0.8 from 2.0.7

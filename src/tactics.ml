@@ -404,7 +404,7 @@ let spec_view t =
   | App (pi, [abs]) when is_pi pi -> begin
       match observe (hnorm abs) with
       | Lam ([x, ty], t) -> Spec_pi (x, ty, t)
-      | _ -> bugf "Cannot view pi body: %s" (term_to_string abs)
+      | _ -> [%bug] "Cannot view pi body: %s" (term_to_string abs)
     end
   | t -> Spec_atom t
 
@@ -504,7 +504,7 @@ let case ~used ~sr ~clauses ~mutual ~defs ~global_support term =
           end
         end
     | {head ; body} ->
-        bugf "Bad head in definitional clause:\n%s := %s"
+        [%bug] "Bad head in definitional clause:\n%s := %s"
           (metaterm_to_string head)
           (metaterm_to_string body)
     end
@@ -1010,7 +1010,7 @@ let search ~depth:n ~hyps ~clauses ~def_unfold ~sr ~retype
     List.iter begin fun goal ->
       let focus = match goal.mode with
         | Sync focus -> focus
-        | _ -> bugf "search/sync_obj_aux: not a sync object"
+        | _ -> [%bug] "search/sync_obj_aux: not a sync object"
       in
       let filter_by_witness =
         match witness with
@@ -1283,13 +1283,9 @@ let some_term_to_restriction t =
 exception TypesNotFullyDetermined
 
 let apply_arrow term args =
-  (* Printf.eprintf "Applying term: %s\n" (metaterm_to_string term);
-   * List.iter begin fun arg ->
-   *   match arg with
-   *   | None -> Printf.eprintf "Applied args: None\n"
-   *   | Some a ->
-   *      Printf.eprintf "Applied args: %s\n" (metaterm_to_string a)
-   *   end args; *)
+  (* [%trace 2 "@[<v0>apply_arrow@,term = %a@,args = @[<v0>%a@]@]" *)
+  (*     format_metaterm term *)
+  (*     Format.(pp_print_list (pp_print_option format_metaterm)) args ] ; *)
   let () = check_restrictions
       (map_args term_to_restriction term)
       (List.map some_term_to_restriction args)
@@ -1325,8 +1321,6 @@ let apply_arrow term args =
          | Unify.UnifyFailure fl -> raise (Unify.UnifyFailure (Unify.FailTrail (!argno, fl)))
     end term args
   in
-  (* Printf.eprintf "Applying result: %s\n" (metaterm_to_string result);
-   * Printf.eprintf "Normalized applying result: %s\n" (metaterm_to_string (normalize result)); *)
   (* [HACK] reconcile does not produce failure trails *)
   Context.reconcile !context_pairs ;
   let result = normalize result in
@@ -1459,12 +1453,12 @@ let rec instantiate_withs term withs =
       (normalize (nabla binders' body), nominals @ used_nominals)
   | _ -> (term, [])
 
-let apply_with ~sr term args withs =
+let apply_with ~sr ~used term args withs =
   if args = [] && withs = [] then
     (term, [])
   else
   let term, used_nominals = instantiate_withs term withs in
-  apply ~sr (normalize term) args ~used_nominals
+  apply ~sr (normalize ~used term) args ~used_nominals
 
 (* Backchain *)
 

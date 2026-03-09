@@ -31,18 +31,6 @@ let sorry exn =
       "To help improve Abella's error messages, please file a bug report at" ;
       "<https://github.com/abella-prover/abella/issues>" ]
 
-let bugf fmt =
-  Printf.ksprintf begin fun msg ->
-    String.concat "\n"
-      [ "[ABELLA BUG]" ;
-        msg ;
-        "Please report this at \
-        \ https://github.com/abella-prover/abella/issues\n" ] |>
-    output_string Stdlib.stderr ;
-    Stdlib.(flush stderr) ;
-    failwith "Bug"
-  end fmt
-
 let failwithf fmt = Printf.ksprintf failwith fmt
 
 let[@inline] maybe_guard ?guard f =
@@ -374,8 +362,29 @@ module IntMap = Stdlib.Map.Make(Stdlib.Int)
 module Json = Yojson.Safe
 
 type pos = Lexing.position * Lexing.position
+let ghost_pos : pos = (Lexing.dummy_pos, Lexing.dummy_pos)
 type 'a wpos = { el : 'a ; pos : pos }
+let ghost e = { el = e ; pos = ghost_pos }
 let get_el (wp : _ wpos) = wp.el
+
+let string_of_position ((start, stop) : pos) =
+  if start == Lexing.dummy_pos then "Unknown position"
+  else if start.pos_lnum = stop.pos_lnum then
+    Printf.sprintf "File %S, line %d, characters %d-%d"
+      start.pos_fname start.pos_lnum
+      (start.pos_cnum - start.pos_bol + 1)
+      (stop.pos_cnum - stop.pos_bol + 1)
+  else
+    Printf.sprintf "File %S, line %d, character %d to line %d, character %d"
+      start.pos_fname
+      start.pos_lnum (start.pos_cnum - start.pos_bol + 1)
+      stop.pos_lnum (stop.pos_cnum - stop.pos_bol + 1)
+
+let failwithf_at ~pos fmt =
+  if pos == ghost_pos || fst pos == Lexing.dummy_pos then
+    failwithf fmt
+  else
+    failwithf ("%s\n" ^^ fmt) (string_of_position pos)
 
 let json_of_position (lft, rgt : pos) : Json.t =
   let open Lexing in
@@ -444,12 +453,10 @@ end
 
 module Xdg = struct
   open struct
-    let xdg = Xdg.create ~env:Sys.getenv_opt ()
-
     let ensure_dir dir =
       if Sys.file_exists dir then
         if Sys.is_directory dir then ()
-        else bugf "Not a directory: %s" dir
+        else [%bug] "Not a directory: %s" dir
       else Sys.mkdir dir 0o755
 
     let ( / ) parent child =
@@ -459,10 +466,22 @@ module Xdg = struct
       child
 
     let abella = "abella"
+
+    let home =
+      Sys.getenv_opt (if Sys.win32 then "USERPROFILE" else "HOME") |>
+      Option.value ~default:""
+    let xdg_cache_dir =
+      Sys.getenv_opt "XDG_CACHE_HOME" |>
+      Option.value ~default:(home / ".cache")
+    let xdg_config_dir =
+      Sys.getenv_opt "XDG_CONFIG_HOME" |>
+      Option.value ~default:(home / ".config")
+    let xdg_state_dir =
+      Sys.getenv_opt "XDG_STATE_HOME" |>
+      Option.value ~default:(home / ".local" / "state")
   end
 
-  let cache_dir   = Xdg.cache_dir xdg  / abella / "run"
-  let config_dir  = Xdg.config_dir xdg / abella
-  let state_dir   = Xdg.state_dir xdg  / abella
-  let runtime_dir = Xdg.runtime_dir xdg
+  let cache_dir   = xdg_cache_dir  / abella / "run"
+  let config_dir  = xdg_config_dir / abella
+  let state_dir   = xdg_state_dir  / abella
 end

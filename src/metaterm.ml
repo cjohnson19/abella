@@ -219,7 +219,7 @@ let pp_print_tids ff tids =
             collate [x] ty ((List.rev cur_ids, cur_ty) :: res) tids
     in
     match tids with
-    | [] -> bugf "Empty quantified variables list"
+    | [] -> [%bug] "Empty quantified variables list"
     | (x, ty) :: tids ->
         let collated_tids = collate [x] ty [] tids in
         let pp_collated ff (xs, ty) =
@@ -445,8 +445,8 @@ let extract_member = function
   | Pred (t,_) -> (
       match observe (hnorm t) with
       | App (_t, [a;b]) -> (a,b)
-      | _ -> bugf "Check is_member before calling extract_member")
-  | _ -> bugf "Check is_member before calling extract_member"
+      | _ -> [%bug] "Check is_member before calling extract_member")
+  | _ -> [%bug] "Check is_member before calling extract_member"
 
 let move_imp_to_context obj =
   let (a, right) = extract_imp obj.right in
@@ -461,7 +461,7 @@ let is_async_obj t =
 let term_to_async_obj t =
   match t with
   | Obj ({mode = Async ; _} as obj, _) -> obj
-  | _ -> bugf "term_to_async_obj called on non-async-object"
+  | _ -> [%bug] "term_to_async_obj called on non-async-object"
 
 let is_sync_obj t =
   match t with
@@ -471,7 +471,7 @@ let is_sync_obj t =
 let term_to_sync_obj t =
   match t with
   | Obj ({mode = Sync _ ; _} as obj, _) -> obj
-  | _ -> bugf "term_to_sync_obj called on non-sync-object"
+  | _ -> [%bug] "term_to_sync_obj called on non-sync-object"
 
 let term_to_restriction t =
   match t with
@@ -483,7 +483,7 @@ let set_restriction r t =
   match t with
     | Obj(obj, _) -> Obj(obj, r)
     | Pred(p, _) -> Pred(p, r)
-    | _ -> bugf "Attempting to set restriction to non-object"
+    | _ -> [%bug] "Attempting to set restriction to non-object"
 
 let reduce_inductive_restriction r =
   match r with
@@ -717,7 +717,7 @@ let normalize_obj ~parity:_ ~bindstack obj =
   in
   aux obj
 
-let normalize_binders =
+let normalize_binders ?(used = []) form =
   let aux_term rens t = replace_term_vars ~tag:Constant rens t in
   let rec aux rens used form = match form with
     | True | False -> form
@@ -751,11 +751,11 @@ let normalize_binders =
         (*   (String.concat "," (List.map fst used)) ; *)
         binding binder bvars (aux rens used body)
   in
-  fun form ->
-    let used = get_metaterm_used form
-               @ get_metaterm_used_nominals form
-               @ find_free_constants form in
-    aux [] used form
+  let used = get_metaterm_used form
+             @ get_metaterm_used_nominals form
+             @ find_free_constants form
+             @ used in
+  aux [] used form
 
 let replace_term_typed_nominals alist t =
   let rec aux t =
@@ -805,11 +805,11 @@ let normalize_nominals t =
   let nominal_alist = List.combine shadowed nominals in
     replace_metaterm_typed_nominals nominal_alist t
 
-let normalize term =
+let normalize ?used term =
   term
   |> map_on_objs_full normalize_obj
   |> normalize_nominals
-  |> normalize_binders
+  |> normalize_binders ?used
 
 let make_nabla_alist tids body =
   let (id_names, id_tys) = List.split tids in
@@ -821,6 +821,9 @@ let make_nabla_alist tids body =
 open Unify
 
 let rec meta_right_unify t1 t2 =
+  (* [%trace 2 "@[<v0>meta_right_unify@,t1 = %a@,t2 = %a@]" *)
+  (*     format_metaterm t1 *)
+  (*     format_metaterm t2] ; *)
   match t1, t2 with
     | True, True -> ()
     | False, False -> ()
@@ -864,7 +867,7 @@ and tids_unifyable tids1 tids2 =
   let tys1 = List.map snd tids1 in
   let tys2 = List.map snd tids2 in
   let prob : Unifyty.constraints =
-    List.map2 (fun ty1 ty2 -> (ty1, ty2, Unifyty.(ghost, CArg))) tys1 tys2 in
+    List.map2 (fun ty1 ty2 -> (ty1, ty2, Unifyty.(ghost_pos, CArg))) tys1 tys2 in
   let bstate = get_scoped_bind_state () in
   match Unifyty.unify_constraints prob with
   | _ -> true
@@ -910,7 +913,7 @@ let derivable goal hyp =
     | Async, Async -> (goal.context, hyp.context)
     | Sync gfoc, Sync hfoc -> (gfoc :: goal.context, hfoc :: hyp.context)
     |  _ ->
-        bugf "derivable: incompatible object sequents"
+        [%bug] "derivable: incompatible object sequents"
   in
   let support_g = obj_support goal in
   let support_h = obj_support hyp in
@@ -974,7 +977,7 @@ let def_head_args head =
     | Pred (p, _) -> begin
         match term_head p with
         | Some (_, args) -> args
-        | None -> bugf "Cannot find arguments!"
+        | None -> [%bug] "Cannot find arguments!"
       end
     | Binding (_, _, t) -> aux t
     | _ -> assert false
@@ -991,7 +994,7 @@ let rec clausify ?(vars=[]) ?(body=[]) head =
          let vars = (x, ty) :: vars in
          clausify ~vars ~body (app abs [xv])
       | tm ->
-          bugf "clausify: invalid pi: %s" (term_to_string tm)
+          [%bug] "clausify: invalid pi: %s" (term_to_string tm)
     end
   | App (imp, [a; head]) when is_imp imp ->
       let body = a :: body in

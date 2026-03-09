@@ -35,6 +35,7 @@
     "Show",          SHOW ;
     "Specification", SPECIFICATION ;
     "Split",         SSPLIT ;
+    "Suspend",       SUSPEND ;
     "Theorem",       THEOREM ;
     "Type",          TTYPE ;
     "abbrev",        ABBREV ;
@@ -50,6 +51,7 @@
     "case",          CASE ;
     "clear",         CLEAR ;
     "coinduction",   COIND ;
+    "compute",       COMPUTE ;
     "cut",           CUT ;
     "end",           END ;
     "exists",        EXISTS ;
@@ -90,7 +92,7 @@
 let number = ['0'-'9'] +
 
 (* Initial characters for variables *)
-let ichar = ['A'-'Z' 'a'-'z' '-' '=' '^' '`' '\'' '?' '$']
+let ichar = ['A'-'Z' 'a'-'z' '-' '=' '`' '\'' '?' '$']
 
 (* Characters allowed only in the body of variables. *)
 let bchar = ['0'-'9' '_' '/' '*' '@' '+' '#' '!' '~']
@@ -127,6 +129,8 @@ rule token = parse
 | "|-"               { TURN }
 | "::"               { CONS }
 | "="                { EQ }
+
+| "^"                { CARET }
 
 | ":"                { COLON }
 | "->"               { RARROW }

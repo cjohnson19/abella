@@ -37,7 +37,7 @@
           pos.pos_fname pos.pos_lnum
           (pos.pos_cnum - pos.pos_bol + 1)
     in
-    Output.msg_printfk
+    Output.msg_formatk
       (fun _ -> raise Types.Reported_parse_error)
       ~severity:Error parse_fmt pos_string
 
@@ -51,6 +51,11 @@
     List.fold_left
       (fun h a -> UApp((fst (get_pos h), snd (get_pos a)), h, a))
       head args
+
+  let rec iterated_app n f x =
+    if n <= 0 then x else
+      let bod = iterated_app (n - 1) f x in
+      UApp((fst (get_pos f), snd (get_pos bod)), f, bod)
 
   let is_illegal_constant k = Term.is_nominal_name k
 
@@ -122,10 +127,10 @@
 %token IND INST APPLY CASE FROM SEARCH TO ON WITH INTROS CUT ASSERT CLAUSEEQ
 %token SKIP UNDO ABORT COIND LEFT RIGHT MONOTONE IMPORT BY
 %token SPLIT SPLITSTAR UNFOLD ALL KEEP CLEAR SPECIFICATION SEMICOLON
-%token THEOREM DEFINE PLUS CODEFINE SET ABBREV UNABBREV QUERY SHOW
-%token PERMUTE BACKCHAIN QUIT UNDERSCORE AS SSPLIT RENAME
+%token THEOREM DEFINE PLUS CODEFINE SET ABBREV UNABBREV QUERY SHOW SUSPEND
+%token PERMUTE BACKCHAIN COMPUTE QUIT UNDERSCORE AS SSPLIT RENAME
 %token BACK RESET
-%token COLON RARROW FORALL NABLA EXISTS WITNESS STAR AT HASH OR AND
+%token COLON RARROW FORALL NABLA EXISTS WITNESS STAR AT HASH OR AND CARET
 %token LBRACE RBRACE LBRACK RBRACK
 %token KIND TYPE KKIND TTYPE SIG MODULE ACCUMSIG ACCUM END CLOSE
 
@@ -204,6 +209,7 @@ id:
   | CASE          { "case" }
   | CLEAR         { "clear" }
   | COIND         { "coinduction" }
+  | COMPUTE       { "compute" }
   | CUT           { "cut" }
   | FROM          { "from" }
   | IND           { "induction" }
@@ -286,6 +292,8 @@ term:
       ULam($loc(v), id, ty, bod) }
   | e=exp; es=exp_list
     { nested_app e es }
+  | f=exp; CARET; n=NUM; x=exp
+    { iterated_app n f x }
   | e=exp
     { e }
 
@@ -469,6 +477,10 @@ pure_command:
     args=loption(TO; args=apply_args {args});
     ws=loption(WITH; ws=withs {ws}); DOT
     { Types.Apply(dep, clr, args, ws, ht) }
+  | ht=hhint; COMPUTE; dp=option(NUM); hs=nonempty_list(clearable); DOT
+    { Types.Compute (hs, dp, ht) }
+  | ht=hhint; COMPUTE; dp=option(NUM); LPAREN; clr=boption(STAR); ALL; RPAREN; DOT
+    { Types.ComputeAll (dp, ht, if clr then `CLEAR else `KEEP) }
   | BACKCHAIN; dep=maybe_depth; clr=clearable;
     ws=loption(WITH; ws=withs {ws}); DOT
     { Types.Backchain(dep, clr, ws) }
@@ -676,6 +688,10 @@ pure_top_command:
   | SSPLIT; thm=loc_id;
     cs=loption(AS; cs=id_list {cs}); DOT
     { Types.SSplit(deloc_id thm, List.map deloc_id cs) }
+  | SUSPEND; head=term; DOT
+    { Types.Suspend (head, None) }
+  | SUSPEND; head=term; DEFEQ; test=separated_nonempty_list(COMMA, id); DOT
+    { Types.Suspend (head, Some test) }
 
 %inline
 import_withs:

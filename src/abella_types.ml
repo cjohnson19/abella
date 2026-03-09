@@ -52,9 +52,16 @@ type set_value =
   | Int           of int
   | QStr          of string
 
+(** The type of appeals to usable things (e.g., hypotheses, lemmas) *)
 type clearable =
   | Keep          of id * ty list
   | Remove        of id * ty list
+
+type suspension = {
+  predicate : id wpos ;
+  arity : int ;
+  flex : int list ;             (* sorted, unique, all < arity *)
+}
 
 type common_command =
   | Back | Reset
@@ -72,9 +79,16 @@ type top_command =
   | Type          of id list * ty
   | Close         of aty list
   | SSplit        of id * id list
+  | Suspend       of uterm * id list option
   | TopCommon     of common_command
 
 type fin = Finished | Unfinished
+
+type guard = {
+  predicate : id ;
+  pattern : term ;
+  condition : term list ;
+}
 
 type compiled =
   | CTheorem      of id * string list * metaterm * fin
@@ -83,6 +97,7 @@ type compiled =
   | CKind         of id list * knd
   | CType         of id list * ty
   | CClose        of (aty * aty list) list
+  | CSuspend      of guard
 
 type witness =
   | WTrue
@@ -143,6 +158,8 @@ type command =
   | Apply        of depth_bound option * clearable
                     * clearable list * (id * uterm) list * hhint
   | Backchain    of depth_bound option * clearable * (id * uterm) list
+  | Compute      of clearable list * int option * hhint
+  | ComputeAll   of int option * hhint * [`CLEAR | `KEEP]
   | CutFrom      of clearable * clearable * uterm * hhint
   | Cut          of clearable * clearable * hhint
   | SearchCut    of clearable * hhint
@@ -238,6 +255,13 @@ let clearable_to_string cl =
   | Keep (h, tys) -> h ^ inst_to_string tys
   | Remove (h, tys) -> "*" ^ h ^ inst_to_string tys
 
+let suspension_to_string susp =
+  let args = List.init susp.arity (fun n -> "X" ^ string_of_int (n + 1))
+             |> String.concat " " in
+  let flex = List.map (fun n -> "X" ^ string_of_int (n + 1)) susp.flex
+             |> String.concat ", " in
+  sprintf "%s %s := %s" susp.predicate.el args flex
+
 let common_command_to_string cc =
   match cc with
   | Back ->
@@ -289,6 +313,12 @@ let top_command_to_string tc =
           sprintf "Split %s as %s" id (id_list_to_string ids)
         else
           sprintf "Split %s" id
+    | Suspend (head, None) ->
+        sprintf "Suspend %s" (uterm_to_string head)
+    | Suspend (head, Some test) ->
+        sprintf "Suspend %s := %s"
+          (uterm_to_string head)
+          (String.concat ", " test)
     | TopCommon(cc) ->
         common_command_to_string cc
 
@@ -341,6 +371,16 @@ let command_to_string c =
           (dbound_to_string dbound)
           (clearable_to_string h)
           (withs_to_string ws)
+    | Compute (hs, dp, hn) ->
+        sprintf "%scompute%s %s"
+          (hn_to_string hn)
+          (match dp with Some dp -> " " ^ string_of_int dp | None -> "")
+          (clearables_to_string hs)
+    | ComputeAll (dp, hn, clr) ->
+        sprintf "%scompute%s (%sall)"
+          (hn_to_string hn)
+          (match dp with Some dp -> " " ^ string_of_int dp | None -> "")
+          (if clr = `CLEAR then "*" else "")
     | Cut(h1, h2, hn) ->
         sprintf "%scut %s with %s"
           (hn_to_string hn)

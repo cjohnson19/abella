@@ -592,6 +592,21 @@ class term_printer = object (self)
             | a ->
                 print_app Pretty.(Atom (STR "pi")) [self#print cx a]
           end
+        | _, [u] -> begin
+            let rec get_repeat n u =
+              match observe (hnorm u) with
+              | App (f, [u]) when eq t f ->
+                  get_repeat (n + 1) u
+              | u -> (n, u)
+            in
+            let (n, u) = get_repeat 1 u in
+            let t = self#print cx t in
+            let u = self#print cx u in
+            let t = if n = 1 then t else
+                Pretty.(Opapp (210, Postfix (t, STR ("^" ^ string_of_int n))))
+            in
+            print_app t [u]
+          end
         | _ ->
             print_app (self#print cx t) (List.map (self#print cx) ts)
       end
@@ -770,20 +785,20 @@ let is_imp t = is_head_name "=>" t
 let extract_imp t =
   match observe (hnorm t) with
     | App(_t, [a; b]) -> (a, b)
-    | _ -> bugf "Check is_imp before calling extract_imp"
+    | _ -> [%bug] "Check is_imp before calling extract_imp"
 
 let is_amp t = is_head_name "&" t
 let extract_amp t =
   match observe (hnorm t) with
     | App(_t, [a; b]) -> (a, b)
-    | _ -> bugf "Check is_amp before calling extract_amp"
+    | _ -> [%bug] "Check is_amp before calling extract_amp"
 
 let is_pi t = is_head_name "pi" t
 
 let extract_pi t =
   match observe (hnorm t) with
     | App(_t, [abs]) -> abs
-    | _ -> bugf "Check is_pi before calling extract_pi"
+    | _ -> [%bug] "Check is_pi before calling extract_pi"
 
 
 let term_map_on_tys f t =

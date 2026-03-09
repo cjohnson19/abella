@@ -195,7 +195,7 @@ let register_definition = function
       check_noredef ids;
       let (basics, consts) = !sign in
       (* Note that in order to type check the definitions, the types
-         of predicates being defined are fixed to their most generate
+         of predicates being defined are fixed to their most generic
          form by fixing the type variables in them to generic ones *)
       let consts = List.map (fun (id, ty) -> (id, Poly ([], ty))) idtys @ consts in
       let clauses = type_udefs ~sr:!sr ~sign:(basics, consts) udefs |>
@@ -206,19 +206,32 @@ let register_definition = function
       sign := (basics, consts) ;
       add_defs typarams idtys flav clauses ;
       CDefine (flav, typarams, idtys, clauses)
-  | _ -> bugf "Not a definition!"
-
-let parse_definition str =
-  Lexing.from_string str |>
-  Parser.top_command_start Lexer.token |>
-  get_el |> register_definition
+  | _ -> [%bug] "Not a definition!"
 
 let k_member = "member"
-let member_def_compiled = {|
-Define |} ^ k_member ^ {| : A -> list A -> prop by
-; |} ^ k_member ^ {| A (A :: L)
-; |} ^ k_member ^ {| A (B :: L) := |} ^ k_member ^ {| A L.
-|} |> parse_definition
+let member_def =
+  let ty_a = tybase @@ Tygenvar "A" in
+  let ty_list_a = tybase @@ Tycons ("list", [ty_a]) in
+  let ty_member = tyarrow [ty_a ; ty_list_a] propty in
+  let const k = UCon (ghost_pos, k, fresh_tyvar ()) in
+  let rec app f ts =
+    match ts with
+    | [] -> f
+    | t :: ts -> app (UApp (ghost_pos, f, t)) ts
+  in
+  let clause_nil : udef_clause =
+    let head = app (const "member") [const "A" ;
+                                     app (const k_cons) [const "A" ;
+                                                         const "L"]] in
+    (UPred (head, Irrelevant), UTrue) in
+  let clause_cons : udef_clause =
+    let head = app (const "member") [const "A" ;
+                                     app (const k_cons) [const "B" ;
+                                                         const "L"]] in
+    let body = app (const "member") [const "A" ; const "L"] in
+    (UPred (head, Irrelevant), UPred (body, Irrelevant)) in
+  Define (Inductive, ["member", ty_member], [clause_nil ; clause_cons])
+  |> register_definition
 
 let () = built_ins_done := true
 
@@ -231,7 +244,7 @@ let clause_head_name cl =
   match cl.head with
   | Binding (Nabla, _, Pred (p, _)) | Pred (p, _) ->
       term_head_name p
-  | _ -> bugf "Clause head name for invalid clause: %s" (metaterm_to_string cl.head)
+  | _ -> [%bug] "Clause head name for invalid clause: %s" (metaterm_to_string cl.head)
 
 (* let rec app_ty tymap = function
  *   | Ty (args, res) ->
@@ -529,15 +542,21 @@ let update_hyp_count name =
   | n -> sequent.count <- max sequent.count n
   | exception _ -> ()
 
-let add_hyp ?name term =
+let unsafe_add_hyp name term =
+  let h = { id = name ; term = term ; abbrev = None } in
+  sequent.hyps <- List.append sequent.hyps [h] ;
+  h
+
+let add_hyp_ ?name term =
   let name = fresh_hyp_name begin
       match name with
       | None -> ""
       | Some name -> name
     end in
   update_hyp_count name ;
-  sequent.hyps <- List.append sequent.hyps
-      [{ id = name ; term = term ; abbrev = None }]
+  unsafe_add_hyp name term
+
+let add_hyp ?name term = ignore (add_hyp_ ?name term)
 
 let remove_hyp cm name =
   let removed_h = ref None in
@@ -829,7 +848,10 @@ let apply ?depth ?name ?(term_witness=ignore) h args ws =
   let args = List.map get_arg_clearly args in
   let () = List.iter (Option.fold ~some:ensure_no_restrictions ~none:()) args in
   let ws = type_apply_withs stmt ws in
-  let result, obligations = Tactics.apply_with ~sr:!sr stmt args ws in
+  let result, obligations =
+    Tactics.apply_with ~sr:!sr stmt args ws
+      ~used:(List.filter is_uninstantiated sequent.vars)
+  in
   let remaining_obligations, term_witnesses =
     partition_obligations ?depth obligations
   in
@@ -900,7 +922,7 @@ let case_to_subgoal ?name case =
     Term.set_bind_state case.bind_state ;
     update_self_bound_vars ()
 
-let case ?name str =
+let case_subgoals str =
   let global_support =
     (List.flatten_map metaterm_support
        (List.map (fun h -> h.term) sequent.hyps)) @
@@ -908,13 +930,14 @@ let case ?name str =
   in
   let term = get_stmt_clearly str in
   let (mutual, defs) = def_unfold term in
-  let cases =
-    Tactics.case ~used:sequent.vars ~sr:!sr ~clauses:!clauses
-      ~mutual ~defs ~global_support term
-  in
+  Tactics.case ~used:sequent.vars ~sr:!sr ~clauses:!clauses
+    ~mutual ~defs ~global_support term
+
+let case ?name h =
+  let cases = case_subgoals h in
+  (* Output.msg_printf "case: there were %d new subgoals" (List.length cases) ; *)
   add_subgoals (List.map (case_to_subgoal ?name) cases) ;
   next_subgoal ()
-
 
 (* Induction *)
 
@@ -1130,6 +1153,8 @@ let multiarrow arrows body =
   in
   aux arrows
 
+(*
+(* [#161] This check does not appear to be logically justified *)
 let ensure_no_renaming vars terms =
   let conflicts =
     List.intersect
@@ -1138,6 +1163,7 @@ let ensure_no_renaming vars terms =
   in
   if conflicts <> [] then
     bugf "Variable renaming required"
+*)
 
 let split_theorem (tys, thm) =
   let foralls, nablas, body = decompose_forall_nabla thm in
@@ -1152,7 +1178,9 @@ let split_theorem (tys, thm) =
     in
     let iforalls = List.map (fun x -> (term_to_name x, tc [] x)) iforall_vars in
     let ibody = replace_metaterm_vars alist ibody in
-    ensure_no_renaming (List.map fst (iforalls @ inablas)) arrows ;
+    (* [#161] This prevents things like: forall x, (forall x, p x) -> p x *)
+    (*        even though they can be manually stated as new theorems *)
+    (* ensure_no_renaming (List.map fst (iforalls @ inablas)) arrows ; *)
     let thm = forall (foralls @ iforalls)
         (nabla (nablas @ inablas)
            (multiarrow arrows ibody)) in
@@ -1222,6 +1250,8 @@ let exists ew =
       sequent.goal <- goal ;
       normalize_sequent ()
   | _ -> ()
+
+(* Compute: see compute.ml *)
 
 (* Skip *)
 
@@ -1336,19 +1366,17 @@ let permute_nominals ids form =
   let term =
     match form with
     | None -> sequent.goal
-    | Some h -> get_hyp h
+    | Some h ->
+        try get_hyp h
+        with _ -> failwithf "Unknown hypothesis %s" h
   in
   let support_alist =
     List.map (fun t -> (term_to_name t, t)) (metaterm_support term)
   in
-  let perm =
-    List.map
-      (fun id ->
-         try
-           List.assoc id support_alist
-         with Not_found -> nominal_var id (tybase (atybase "")))
-      ids
-  in
+  let perm = List.map begin fun id ->
+      try List.assoc id support_alist
+      with Not_found -> nominal_var id (tybase (atybase ""))
+    end ids in
   let result = Tactics.permute_nominals perm term in
   match form with
   | None -> sequent.goal <- result

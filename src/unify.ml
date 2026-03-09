@@ -376,12 +376,12 @@ let rec prune_same_var l1 l2 j bl = match l1,l2 with
 
 (* Given a variable [v1] which has access to the terms [a11 ... a1n] via
  * de Bruijn indices,
- *   [make_non_llambda_subst v1 a1 t2]
+ *   [make_non_llambda_subst lev v1 a1 t2]
  * returns a substitution for [v1] which unifies it with [t2]. Here it is
  * assumed that [a1] satisfies the LLambda restriction, but [t2] might not. If
  * a substitution cannot be found due to non-LLambda issues, an error exception
  * is thrown. *)
-let make_non_llambda_subst v1 a1 t2 =
+let make_non_llambda_subst lev v1 a1 t2 =
   let a1 = List.map hnorm a1 in
   let n = List.length a1 in
   let rec aux lev t =
@@ -409,7 +409,7 @@ let make_non_llambda_subst v1 a1 t2 =
           lambda idtys2 (aux (lev + List.length idtys2) b2)
       | _ -> raise (UnifyError NotLLambda)
   in
-    aux 0 t2
+  aux lev t2
 
 (* Here we assume v1 is a variable we want to bind to t2. We must check that
  * there is no-cyclic substitution and that nothing with a timestamp higher
@@ -564,11 +564,11 @@ let makesubst tyctx h1 t2 a1 n =
                         else
                           app h2 a1'
                   else
-                    make_non_llambda_subst hv1 a1 c
-            | Var _ -> bugf "logic variable on the left (1)"
+                    make_non_llambda_subst lev hv1 a1 c
+            | Var _ -> [%bug] "logic variable on the left (1)"
             | _ -> assert false
           end
-      | Var _ -> bugf "logic variable on the left (2)"
+      | Var _ -> [%bug] "logic variable on the left (2)"
       | _ -> assert false
   in
 
@@ -620,7 +620,7 @@ let makesubst tyctx h1 t2 a1 n =
                       else
                         assert false (* fail TypesMismatch *)
                   else
-                    make_non_llambda_subst hv1 a1 t2
+                    make_non_llambda_subst lev hv1 a1 t2
             | App _ | Lam _
             | Var _ | DB _ ->
                 nested_subst tyctx t2 lev
@@ -674,7 +674,7 @@ and unify_const_term tyctx cst t2 =
         let a1 = lift_args [] (List.length idtys) in
           unify (List.rev_app idtys tyctx) (app cst a1) t2
     | Var v when not (variable v.tag || constant v.tag) ->
-        bugf "logic variable on the left (3)"
+        [%bug] "logic variable on the left (3)"
     | _ -> fail (ConstClash (cst,t2))
 
 (* Unify [App h1 a1 = t2].
@@ -703,7 +703,7 @@ and unify_app_term tyctx h1 a1 t1 t2 =
               let m = List.length a2 in
                 bind h2 (makesubst tyctx h2 t1 a2 m)
           | Var v when not (variable v.tag || constant v.tag) ->
-              bugf "logic variable on the left (5)"
+              [%bug] "logic variable on the left (5)"
           | _ -> assert false
         end
     | DB n1, App (h2,a2) ->
@@ -715,14 +715,14 @@ and unify_app_term tyctx h1 a1 t1 t2 =
                 bind h2 (makesubst tyctx h2 t1 a2 m)
           | Var v when constant v.tag -> fail (ConstClash (h1,h2))
           | Var v when not (variable v.tag || constant v.tag) ->
-              bugf "logic variable on the left (5)"
+              [%bug] "logic variable on the left (5)"
           | _ -> assert false
         end
     | Lam _, _ | _, Lam _
     | Ptr _, _ | _, Ptr _
     | Susp _, _ | _, Susp _ -> assert false
     | Var v, _ when not (variable v.tag || constant v.tag) ->
-        bugf "logic variable on the left (6)"
+        [%bug] "logic variable on the left (6)"
     | _ -> fail (ConstClash (h1,t2))
 
 (* Unify [v1 = t2].
@@ -782,7 +782,7 @@ and unify tyctx t1 t2 =
     | _,Var c2 when constant c2.tag -> unify_const_term tyctx t2 t1
     | DB i1,DB i2                   -> if i1 <> i2 then fail (ConstClash(t1, t2))
 
-    | _ -> bugf "logic variable on the left (7)"
+    | _ -> [%bug] "logic variable on the left (7)"
   with
     | UnifyError NotLLambda ->
         let n = max (closing_depth t1) (closing_depth t2) in
